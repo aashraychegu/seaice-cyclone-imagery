@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import requests
+import argparse
 import getpass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,25 +12,8 @@ ENV_FILE = '.env'
 TOKEN_URL = 'https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token'
 
 
-def get_valid_access_token(env_file: str = ENV_FILE) -> Optional[str]:
-    """
-    Get a valid access token, refreshing if necessary.
-    
-    Args:
-        env_file: Path to .env file (default: '.env')
-        
-    Returns:
-        Valid access token string or None if unable to obtain one
-        
-    Example:
-        >>> token = get_valid_access_token()
-        >>> if token:
-        >>>     headers = {'Authorization': f'Bearer {token}'}
-    """
-    if not Path(env_file).exists():
-        return None
-    
-    # Load environment variables
+def refresh_access_token(env_file: str = ENV_FILE) -> Optional[str]:
+
     load_dotenv(env_file, override=True)
     
     access_token = os.getenv('ACCESS_TOKEN')
@@ -55,7 +39,7 @@ def get_valid_access_token(env_file: str = ENV_FILE) -> Optional[str]:
     token_data = response.json()
     
     # Save new token data
-    _save_token_data(token_data, env_file)
+    save_token_data(token_data, env_file)
     
     return token_data['access_token']
 
@@ -85,13 +69,13 @@ def authenticate(username: str, password: str, env_file: str = ENV_FILE) -> str:
     token_data = response.json()
     
     # Save token data
-    _save_token_data(token_data, env_file)
+    save_token_data(token_data, env_file)
     
     print(f"✓ Authentication successful")
     return token_data['access_token']
 
 
-def _save_token_data(token_data: dict, env_file: str):
+def save_token_data(token_data: dict, env_file: str):
     """Save token data to .env file."""
     now = datetime.now()
     access_expires_at = now + timedelta(seconds=token_data['expires_in'])
@@ -108,53 +92,16 @@ def _save_token_data(token_data: dict, env_file: str):
     print(f"✓ Tokens saved to {env_file}")
     print(f"✓ Access token expires at: {access_expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
 
-
-def display_usage(env_file: str = ENV_FILE):
-    """Display usage instructions."""
-    print(f"\n{'='*60}")
-    print("To use in Python:")
-    print(f"{'='*60}")
-    print(f"  from setup_access_token import get_valid_access_token")
-    print(f"  ")
-    print(f"  token = get_valid_access_token()")
-    print(f"  headers = {{'Authorization': f'Bearer {{token}}'}}")
-    print(f"\n{'='*60}")
-    print("To use in bash:")
-    print(f"{'='*60}")
-    print(f"  source {env_file}")
-
-
 def main():
-    """CLI interface for token management."""
-    print("=" * 60)
-    print("Copernicus Data Space Ecosystem - Token Manager")
-    print("=" * 60)
+    parser = argparse.ArgumentParser("put in your username and password")
+    parser.add_argument("--uname",type=str)
+    parser.add_argument('--pword',type=str)
+    args = parser.parse_args()
     
-    # Try to get existing valid token
-    existing_token = get_valid_access_token()
-    
-    if existing_token:
-        load_dotenv(ENV_FILE)
-        print("\n✓ Valid tokens found")
-        print(f"  Access token expires at: {os.getenv('ACCESS_TOKEN_EXPIRES_AT')}")
-        print(f"  Refresh token expires at: {os.getenv('REFRESH_TOKEN_EXPIRES_AT')}")
-        
-        choice = input("\nGet new tokens anyway? (y/n): ").strip().lower()
-        if choice != 'y':
-            display_usage()
-            return
-    
-    # Authenticate
-    print("\n" + "=" * 60)
-    print("Authentication Required")
-    print("=" * 60)
-    
-    username = input("Enter your username: ").strip()
-    password = getpass.getpass("Enter your password: ")
+    username = input("Enter your username: ").strip() if args.uname is None else args.uname
+    password = getpass.getpass("Enter your password: ") if args.pword is None else args.pword
     
     authenticate(username, password)
-    display_usage()
-
 
 if __name__ == "__main__":
     main()

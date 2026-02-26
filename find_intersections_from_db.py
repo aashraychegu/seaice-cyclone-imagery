@@ -64,7 +64,6 @@ parser.add_argument("--output-columns", nargs='*', default=[],
                    help=f"Additional columns to include ({', '.join(ALWAYS_INCLUDED.keys())} always included)")
 parser.add_argument("--threads", type=int, default=32, help="DuckDB threads (default: 32)")
 parser.add_argument("--memory-limit", type=str, default="16GB", help="DuckDB memory limit (default: 16GB)")
-parser.add_argument("--list-columns", action="store_true", help="List available columns and exit")
 parser.add_argument("--verbose", action="store_true", help="Print SQL script")
 
 args = parser.parse_args()
@@ -94,9 +93,6 @@ required = [
     ('after-end', args.after_end)
 ]
 
-for name, value in required:
-    if value is None:
-        parser.error(f"--{name} is required (unless using --list-columns)")
 
 if args.before_start < args.before_end:
     print("ERROR: --before-start must be >= --before-end")
@@ -136,11 +132,6 @@ for col in args.output_columns:
         select_columns.append(satellite_mapping[col])
     else:
         invalid.append(col)
-
-if invalid:
-    print(f"ERROR: Invalid columns: {', '.join(invalid)}")
-    print(f"Use --list-columns to see available columns")
-    sys.exit(1)
 
 select_clause = ',\n    '.join(select_columns)
 

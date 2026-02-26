@@ -1,230 +1,202 @@
 import subprocess
 import argparse
 import os
-import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-from threading import Lock
+from threading import Lock, BoundedSemaphore
 import time
 import csv
+import random
+from tqdm import tqdm
+from datetime import datetime, timedelta
+import requests
 
-# Thread-safe print lock
 print_lock = Lock()
+TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 
 
 def safe_print(*args, **kwargs):
-    """Thread-safe print function"""
     with print_lock:
         print(*args, **kwargs)
 
 
-def load_token():
-    """Load ACCESS_TOKEN from .env file"""
-    load_dotenv()
-    access_token = os.getenv("ACCESS_TOKEN")
-    if not access_token:
-        safe_print("Error: ACCESS_TOKEN not found. Run get_token.py first.")
-        return None
-    return access_token
+class TokenManager:
+    def __init__(self):
+        self.lock = Lock()
+        load_dotenv()
+        self.access_token = os.getenv('ACCESS_TOKEN')
+        self.refresh_token = os.getenv('REFRESH_TOKEN')
+        expires_str = os.getenv('ACCESS_TOKEN_EXPIRES_AT')
+        self.expires_at = datetime.fromisoformat(expires_str)
+        
+    def get_valid_token(self) -> str:
+        with self.lock:
+            if (self.expires_at - datetime.now()).total_seconds() < 60:
+                safe_print("🔄 Refreshing token...")
+                response = requests.post(
+                    TOKEN_URL,
+                    data={
+                        'grant_type': 'refresh_token',
+                        'refresh_token': self.refresh_token,
+                        'client_id': 'cdse-public'
+                    },
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                response.raise_for_status()
+                token_data = response.json()
+                
+                self.access_token = token_data['access_token']
+                self.refresh_token = token_data['refresh_token']
+                self.expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'])
+                safe_print("✅ Token refreshed")
+            
+            return self.access_token
 
 
 def load_product_ids_from_csv(csv_file):
-    """Load product IDs from CSV file with 'id' column"""
-    product_ids = []
-    with open(csv_file, "r", newline="") as f:
+    with open(csv_file, "r") as f:
         reader = csv.DictReader(f)
-
-        if "id" not in reader.fieldnames:
-            safe_print(
-                f"Error: CSV file must have an 'id' column. Found columns: {reader.fieldnames}"
-            )
-            return None
-
-        for row in reader:
-            product_id = (row.get("id") or "").strip()
-            if product_id:
-                product_ids.append(product_id)
-
-    safe_print(f"Loaded {len(product_ids)} product ID(s) from {csv_file}")
-    return product_ids
+        ids = [row["id"].strip() for row in reader if row.get("id", "").strip()]
+    safe_print(f"Loaded {len(ids)} product IDs")
+    return ids
 
 
-def download_with_curl(product_id, output_filename, access_token):
-    """Download using curl"""
+def is_rate_limited(stderr_text: str) -> bool:
+    s = (stderr_text or "").lower()
+    return "429" in s or "too many requests" in s
+
+
+def is_auth_error(stderr_text: str) -> bool:
+    s = (stderr_text or "").lower()
+    return "401" in s or "403" in s
+
+
+def download_with_curl(product_id, zip_path: Path, token_manager: TokenManager, semaphore: BoundedSemaphore):
     url = f"https://download.dataspace.copernicus.eu/odata/v1/Products({product_id})/$value"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
 
-    safe_print(f"[{product_id}] Starting download")
+    with semaphore:
+        attempt = 1
+        backoff = 2.0
+        
+        while attempt <= 8:
+            access_token = token_manager.get_valid_token()
+            
+            cmd = [
+                "curl", "-L", "--fail", "-sS",
+                "-H", f"Authorization: Bearer {access_token}",
+                "-o", str(zip_path),
+                url,
+            ]
 
-    output_path = Path(output_filename)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+            p = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 
-    cmd = [
-        "curl",
-        "-L",
-        "-#",
-        "-H",
-        f"Authorization: Bearer {access_token}",
-        "-o",
-        output_filename,
-        url,
-    ]
+            if p.returncode == 0:
+                return True
 
-    subprocess.run(cmd, check=True, capture_output=True)
-    safe_print(f"[{product_id}] ✓ Downloaded to {output_filename}")
-    return True
+            zip_path.unlink(missing_ok=True)
+
+            if is_auth_error(p.stderr):
+                print("Auth issues")
+                quit()
+
+            if is_rate_limited(p.stderr):
+                sleep_s = min(60, backoff) * (0.8 + 0.4 * random.random())
+                safe_print(f"[{product_id}] Rate limited, sleeping {sleep_s:.1f}s")
+                time.sleep(sleep_s)
+                backoff *= 2
+                attempt += 1
+                continue
+
+            raise RuntimeError(f"curl failed: {p.stderr.strip()}")
+        
+        raise RuntimeError(f"Failed after {attempt} attempts")
 
 
-def extract_tiff_files(zip_path, product_id, output_dir, keep_zip=False):
-    """
-    Extract TIFF files into: output_dir/<product_id>/
-    Keep original TIFF filenames.
-    """
-    output_root = Path(output_dir)
-    product_folder = output_root / product_id
+def extract_tiffs(zip_path: Path, product_id: str, output_dir: str, keep_zip: bool):
+    product_folder = Path(output_dir) / product_id
     product_folder.mkdir(parents=True, exist_ok=True)
 
-    temp_dir = product_folder / f"temp_{product_id}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "unzip", "-j", "-o", str(zip_path),
+        "*/measurement/*.tif", "*/measurement/*.tiff",
+        "-d", str(product_folder),
+    ]
 
-    safe_print(f"[{product_id}] Extracting TIFF files from {zip_path}...")
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # List contents and filter for TIFF files
-    list_cmd = ["unzip", "-l", str(zip_path)]
-    result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
-
-    tiff_files = []
-    for line in result.stdout.split("\n"):
-        if ".tif" in line.lower():
-            parts = line.split()
-            if len(parts) >= 4:
-                filename = " ".join(parts[3:])
-                tiff_files.append(filename)
-
-    if not tiff_files:
-        safe_print(f"[{product_id}] ⚠ No TIFF files found in {zip_path}")
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        return False
-
-    safe_print(f"[{product_id}] Found {len(tiff_files)} TIFF file(s)")
-
-    # Extract TIFF files (flatten paths into temp_dir)
-    for tiff_file in tiff_files:
-        extract_cmd = ["unzip", "-j", "-o", str(zip_path), tiff_file, "-d", str(temp_dir)]
-        subprocess.run(extract_cmd, check=True, capture_output=True)
-
-    # Move extracted files into product folder, preserving original names
-    extracted_files = sorted(
-        [p for p in temp_dir.iterdir() if p.is_file() and ".tif" in p.name.lower()]
-    )
-    for src in extracted_files:
-        dst = product_folder / src.name
-        if dst.exists():
-            dst.unlink()
-        shutil.move(str(src), str(dst))
-        safe_print(f"[{product_id}] ✓ Extracted: {dst}")
-
-    # Clean up temp directory
-    shutil.rmtree(temp_dir, ignore_errors=True)
-
+    extracted = list(product_folder.glob("*.tif")) + list(product_folder.glob("*.tiff"))
+    
     if not keep_zip:
-        os.remove(zip_path)
-        safe_print(f"[{product_id}] ✓ Removed zip file: {zip_path}")
-    else:
-        safe_print(f"[{product_id}] ✓ Kept zip file: {zip_path}")
+        zip_path.unlink(missing_ok=True)
 
-    return True
+    return len(extracted) > 0
 
 
-def process_product(product_id, output_dir, zip_dir, keep_zip=False, skip_download=False, access_token=None):
-    """Process a single product (download and extract)"""
+def process_product(product_id, output_dir, zip_dir, keep_zip, skip_download, token_manager, dl_semaphore):
     zip_path = Path(zip_dir) / f"{product_id}.zip"
 
     if not skip_download:
-        download_with_curl(product_id, str(zip_path), access_token)
+        download_with_curl(product_id, zip_path, token_manager, dl_semaphore)
 
-    ok = extract_tiff_files(str(zip_path), product_id, output_dir, keep_zip)
-    return product_id, ok, ("Success" if ok else "Extraction failed")
+    ok = extract_tiffs(zip_path, product_id, output_dir, keep_zip)
+    return product_id, ok
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download and extract TIFF files from Copernicus Data Space (parallel)",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--csv-file",
-        required=True,
-        help='CSV file containing product IDs (must have an "id" column)',
-    )
-    parser.add_argument("--output-dir", required=True, help="Output directory for TIFF files")
-    parser.add_argument("--zip-dir", required=True, help="Directory to store zip files")
-    parser.add_argument("--keep-zip", action="store_true", help="Keep the original zip files after extraction")
-    parser.add_argument("--skip-download", action="store_true", help="Skip download, only extract existing zip files")
-    parser.add_argument("--workers", type=int, default=4, help="Number of parallel workers")
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv-file", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--zip-dir", required=True)
+    parser.add_argument("--keep-zip", action="store_true")
+    parser.add_argument("--skip-download", action="store_true")
+    parser.add_argument("--workers", type=int, default=16)
+    parser.add_argument("--download-slots", type=int, default=4)
     args = parser.parse_args()
 
     product_ids = load_product_ids_from_csv(args.csv_file)
-    if product_ids is None:
-        return
-    if not product_ids:
-        safe_print("Error: No product IDs found in CSV file")
-        return
+    token_manager = TokenManager()
 
-    access_token = load_token()
-    if not access_token:
-        return
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    Path(args.zip_dir).mkdir(parents=True, exist_ok=True)
 
-    safe_print(f"Processing {len(product_ids)} product(s) with {args.workers} worker(s)")
-    safe_print(f"Zip files directory: {args.zip_dir}")
-    safe_print(f"TIFF output directory: {args.output_dir}")
-    safe_print(f"Keep zip files: {args.keep_zip}")
-    safe_print("=" * 80)
+    dl_semaphore = BoundedSemaphore(args.download_slots)
+    start = time.time()
+    ok_count = 0
+    failed = []
 
-    start_time = time.time()
-    results = {"success": [], "failed": []}
-
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        future_to_id = {
-            executor.submit(
-                process_product,
-                product_id,
-                args.output_dir,
-                args.zip_dir,
-                args.keep_zip,
-                args.skip_download,
-                access_token,
-            ): product_id
-            for product_id in product_ids
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        futures = {
+            ex.submit(process_product, pid, args.output_dir, args.zip_dir, 
+                     args.keep_zip, args.skip_download, token_manager, dl_semaphore): pid
+            for pid in product_ids
         }
 
-        for future in as_completed(future_to_id):
-            product_id = future_to_id[future]
-            try:
-                pid, success, message = future.result()
-            except Exception as e:
-                results["failed"].append((product_id, str(e)))
-                safe_print(f"[{product_id}] ✗ Failed: {e}")
-                continue
+        with tqdm(total=len(product_ids), desc="Products", unit="product") as pbar:
+            for fut in as_completed(futures):
+                pid = futures[fut]
+                try:
+                    _, ok = fut.result()
+                    if ok:
+                        ok_count += 1
+                    else:
+                        failed.append((pid, "No TIFFs found"))
+                        safe_print(f"failed: {pid}")
+                except Exception as e:
+                    safe_print(f"failed: {pid} \n{str(e)}")
+                    
+                    failed.append((pid, str(e)))
+                finally:
+                    pbar.update(1)
 
-            if success:
-                results["success"].append(pid)
-            else:
-                results["failed"].append((pid, message))
+    elapsed = time.time() - start
+    safe_print(f"\nProcessed: {len(product_ids)} | Success: {ok_count} | Failed: {len(failed)} | Time: {elapsed:.1f}s")
 
-    elapsed_time = time.time() - start_time
-    safe_print("=" * 80)
-    safe_print("\nSummary:")
-    safe_print(f"  Total processed: {len(product_ids)}")
-    safe_print(f"  Successful: {len(results['success'])}")
-    safe_print(f"  Failed: {len(results['failed'])}")
-    safe_print(f"  Time elapsed: {elapsed_time:.2f} seconds")
-
-    if results["failed"]:
+    if failed:
         safe_print("\nFailed products:")
-        for product_id, message in results["failed"]:
-            safe_print(f"  - {product_id}: {message}")
+        for pid, msg in failed[:50]:
+            safe_print(f"  {pid}: {msg}")
 
 
 if __name__ == "__main__":
