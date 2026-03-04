@@ -4,10 +4,10 @@ import subprocess
 
 def check_intersections(matches_file, output_file):
     """
-    Check for intersecting geometries for each cyclone_id and compute intersection percentages.
+    Check for intersecting geometries for each point_id and compute intersection percentages.
     """
     
-    print("Analyzing intersections for all cyclone_ids...")
+    print("Analyzing intersections for all point_ids...")
     
     # Direct COPY to parquet
     write_query = f"""
@@ -15,11 +15,11 @@ def check_intersections(matches_file, output_file):
     load spatial;
     COPY (
         WITH deduplicated AS (
-          SELECT DISTINCT ON (geometry) cyclone_id, geometry, id, datetime_start, cyclone_datetime
+          SELECT DISTINCT ON (geometry) point_id, geometry, id, datetime_start, point_datetime
           FROM '{matches_file}'
         )
         SELECT 
-          a.cyclone_id,
+          a.point_id,
           a.geometry as geometry_a,
           b.geometry as geometry_b,
           (ST_Area(ST_Intersection(a.geometry, b.geometry)) / ST_Area(a.geometry) * 100) as pct_a,
@@ -28,14 +28,14 @@ def check_intersections(matches_file, output_file):
           b.id as id_b,
           a.datetime_start as datetime_start_a,
           b.datetime_start as datetime_start_b,
-          a.cyclone_datetime as cyclone_datetime
+          a.point_datetime as point_datetime
         FROM deduplicated a
         JOIN deduplicated b 
-          ON a.cyclone_id = b.cyclone_id
+          ON a.point_id = b.point_id
           AND ST_Intersects(a.geometry, b.geometry)
           AND a.id < b.id
-          AND a.datetime_start < a.cyclone_datetime
-          AND b.datetime_start > a.cyclone_datetime
+          AND a.datetime_start < a.point_datetime
+          AND b.datetime_start > a.point_datetime
           AND a.datetime_start < b.datetime_start
     ) TO '{output_file}' (FORMAT PARQUET);
     """
@@ -55,7 +55,7 @@ def check_intersections(matches_file, output_file):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Check for intersecting geometries in matches file for each cyclone_id'
+        description='Check for intersecting geometries in matches file for each point_id'
     )
     parser.add_argument(
         '--matches-file',
