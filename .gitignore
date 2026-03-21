@@ -3,3 +3,4 @@ intermediates/*
 *.parquet
 .s3cfg
 *.nc
+cdsapikey

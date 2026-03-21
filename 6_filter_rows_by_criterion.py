@@ -39,16 +39,17 @@ request = {
 }
 
 
-client = cdsapi.Client(url = "https://cds.climate.copernicus.eu/api", key = "02ef4c7d-7301-4340-82cc-1ae0b2ac824d")
-client.retrieve(dataset, request).download(SIC_path)
-
-sea_ice_data = xr.open_dataset(SIC_path)
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--input-uuids", required=True)
 parser.add_argument("--output-uuids", required=True)
-
+parser.add_argument("--key",required=True)
 args = parser.parse_args()
+
+
+client = cdsapi.Client(url = "https://cds.climate.copernicus.eu/api", key = args.key)
+client.retrieve(dataset, request).download(SIC_path)
+
+sea_ice_data = xr.open_dataset(SIC_path)
 
 def rounded_lat_lon(lat_lon, multiple=0.25):
     lat_lon = list(lat_lon)
