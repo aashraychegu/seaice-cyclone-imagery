@@ -1,10 +1,10 @@
 import argparse
-import subprocess
+import duckdb
 import pyfiglet
 import sys
 
 def bigtext(string):
-    return print(pyfiglet.figlet_format(string,font="isometric1", width = 160))
+    return print(pyfiglet.figlet_format(string, font="isometric1", width=160))
 
 # 1. Set up argument parser
 parser = argparse.ArgumentParser(
@@ -17,34 +17,28 @@ parser.add_argument("--output-db", required=True, help="Path for the output Duck
 # 2. Parse the command-line arguments
 args = parser.parse_args()
 
-# 3. Generate the SQL command as a string
-sql_script = f"""
-INSTALL spatial;
-LOAD spatial;
+# 3. Connect to DuckDB and execute commands
+# Connect to the database (creates it if it doesn't exist)
+con = duckdb.connect(args.output_db)
 
+# Install and load spatial extension
+con.execute("INSTALL spatial;")
+con.execute("LOAD spatial;")
 
-CREATE OR REPLACE TABLE {args.table_name} AS
-SELECT
-    * REPLACE (ST_GeomFromText(geometry) AS geometry)
-FROM
-    read_parquet('{args.input_parquet}');
+# Create the table with geometry
+con.execute(f"""
+    CREATE OR REPLACE TABLE {args.table_name} AS
+    SELECT
+        * REPLACE (ST_GeomFromText(geometry) AS geometry)
+    FROM
+        read_parquet('{args.input_parquet}');
+""")
 
-SUMMARIZE {args.table_name};
-"""
+# Get summary of the table
+result = con.execute(f"SUMMARIZE {args.table_name};").fetchdf()
 
-result = subprocess.run(
-        ['duckdb', args.output_db],  # The command to run
-        input=sql_script,           # Pass the SQL script to the command's stdin
-        text=True,                  # Handle stdin as text
-        capture_output=True         # Suppress output unless an error occurs
-)
+# Print the summary
+print(result)
 
-# bigtext(f"Output: {result.returncode}")
-
-# bigtext(f"stdout")
-print(result.stdout)
-
-# bigtext(f"stderr")
-# print(result.stderr)
-
-# print(result)
+# Close the connection
+con.close()
