@@ -7,3 +7,4 @@ mkdir shapes
 mkdir shapes/sentinel1
 mkdir tiffs
 mkdir uuids
+mkdir era5_mslp

@@ -1,4 +1,4 @@
 import xarray
 
-dataset = xarray.open_dataset("intermediates/sea_ice_concentration_2024.nc")
+dataset = xarray.open_dataset("./intermediates/era5_mslp/2015_mslp.nc")
 print(dataset.variables)
