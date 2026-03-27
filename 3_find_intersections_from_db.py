@@ -30,7 +30,7 @@ def validate_args(args, parser, con: duckdb.DuckDBPyConnection) -> set[str]:
 
     # Satellite table required columns
     sat_cols = get_table_columns(con, args.table)
-    missing = {"id", "geometry", "datetime_start", "product_type"} - sat_cols
+    missing = {"id", "geometry", "datetime_start"} - sat_cols
     if missing:
         parser.error(
             f"Satellite table '{args.table}' is missing required columns: {', '.join(sorted(missing))}"
@@ -87,8 +87,7 @@ def main(args, parser):
                MAX(after_window_end)   as max_time
         FROM input_points
     ) b
-      ON s.datetime_start BETWEEN b.min_time AND b.max_time
-    WHERE s.product_type LIKE '{args.product_type}';
+      ON s.datetime_start BETWEEN b.min_time AND b.max_time;
 
     CREATE OR REPLACE TABLE {matches_table} AS
     SELECT {select_clause}
@@ -189,13 +188,12 @@ if __name__ == "__main__":
     io.add_argument("--points", required=True, help="Input Parquet file with cyclone points.")
 
     tw = parser.add_argument_group("Time Window Arguments (hours relative to point datetime)")
-    tw.add_argument("--before-start", default = 96, type=float)
-    tw.add_argument("--before-end", default = 12, type=float)
-    tw.add_argument("--after-start", default = 12, type=float)
-    tw.add_argument("--after-end", default = 96, type=float)
+    tw.add_argument("--before-start", default=96, type=float)
+    tw.add_argument("--before-end", default=12, type=float)
+    tw.add_argument("--after-start", default=12, type=float)
+    tw.add_argument("--after-end", default=96, type=float)
 
-    flt = parser.add_argument_group("Filtering and Output Columns")
-    flt.add_argument("--product-type", default="EW_GRD%", help="SQL LIKE pattern (default: EW_GRD%).")
+    flt = parser.add_argument_group("Output Columns")
     flt.add_argument("--output-columns", nargs="*", default=[], help="Extra satellite columns to include.")
 
     perf = parser.add_argument_group("Performance")
