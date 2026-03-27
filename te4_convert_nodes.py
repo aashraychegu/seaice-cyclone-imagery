@@ -4,7 +4,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_file", default="./intermediates/stitchnodes/tracks_mslp.csv")
-parser.add_argument("--out_file", default="./intermediates/stitchnodes/tracks_mslp.parquet")
+parser.add_argument("--out_file", default="./intermediates/te_out/tracks_mslp.parquet")
 args = parser.parse_args()
 
 # Ensure output directory exists

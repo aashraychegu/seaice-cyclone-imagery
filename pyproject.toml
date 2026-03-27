@@ -27,4 +27,9 @@ dependencies = [
     "xarray>=2026.2.0",
     "h5py==3.14.0",
     "h5netcdf>=1.8.1",
+    "scipy>=1.17.1",
+    "dask>=2026.3.0",
+    "zarr>=3.1.6",
+    "earthdata>=0.4.2",
+    "netcdf4>=1.7.4",
 ]

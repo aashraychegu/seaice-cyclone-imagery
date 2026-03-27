@@ -189,10 +189,10 @@ if __name__ == "__main__":
     io.add_argument("--points", required=True, help="Input Parquet file with cyclone points.")
 
     tw = parser.add_argument_group("Time Window Arguments (hours relative to point datetime)")
-    tw.add_argument("--before-start", type=float, required=True)
-    tw.add_argument("--before-end", type=float, required=True)
-    tw.add_argument("--after-start", type=float, required=True)
-    tw.add_argument("--after-end", type=float, required=True)
+    tw.add_argument("--before-start", default = 96, type=float)
+    tw.add_argument("--before-end", default = 12, type=float)
+    tw.add_argument("--after-start", default = 12, type=float)
+    tw.add_argument("--after-end", default = 96, type=float)
 
     flt = parser.add_argument_group("Filtering and Output Columns")
     flt.add_argument("--product-type", default="EW_GRD%", help="SQL LIKE pattern (default: EW_GRD%).")
