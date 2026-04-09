@@ -6,9 +6,7 @@ set -e
 
 # Default configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DB_FILE="${SCRIPT_DIR}/thalassoica.db"
-CONTAINER="thalassoica"
-CONTAINER_PATH="/opt/project"
+DB_FILE="${SCRIPT_DIR}/intermediates/db/database.duckdb"
 
 # Color codes for interactive menu
 RED='\033[0;31m'
@@ -56,11 +54,6 @@ show_menu() {
     echo ""
 }
 
-# Function to run a command inside the apptainer container
-run_container() {
-    apptainer run --writable "${CONTAINER}" "${CONTAINER_PATH}/$@"
-}
-
 # Function to run a step with logging
 run_step() {
     local step_name="$1"
@@ -69,14 +62,7 @@ run_step() {
     echo -e "${GREEN}Running: ${step_name}${NC}"
     echo "------------------------------------------------------------"
 
-    # Check if verbose flag is set
-    if [[ " $* " =~ " --verbose " ]] || [[ " $* " =~ " -v " ]]; then
-        verbose_flag="--verbose"
-    else
-        verbose_flag=""
-    fi
-
-    run_container "$@"
+    "$@"
 
     echo -e "${GREEN}SUCCESS: ${step_name}${NC}"
     echo ""
@@ -85,8 +71,7 @@ run_step() {
 # Function to download ERA5 MSLP data
 download_era5_mslp() {
     echo "  Downloading ERA5 MSLP data (2014-2024)..."
-    run_container \
-        python "${CONTAINER_PATH}/tempestextremes/download/download_netcdf.py" \
+    uv run "${SCRIPT_DIR}/tempestextremes/download/download_netcdf.py" \
         --input-dir "${SCRIPT_DIR}/intermediates/era5_mslp" \
         --start-year 2014 \
         --end-year 2024 \
@@ -95,7 +80,7 @@ download_era5_mslp() {
 
 # Function to detect nodes
 detect_nodes() {
-    python "${SCRIPT_DIR}/tempestextremes/detect/detect_nodes.py" \
+    uv run "${SCRIPT_DIR}/tempestextremes/detect/detect_nodes.py" \
         --in_data_dir "${SCRIPT_DIR}/intermediates/era5_mslp" \
         --TE_temps "${SCRIPT_DIR}/intermediates/tempestextreme_files" \
         --out_data_dir "${SCRIPT_DIR}/intermediates/detectnodes"
@@ -103,7 +88,7 @@ detect_nodes() {
 
 # Function to stitch nodes
 stitch_nodes() {
-    python "${SCRIPT_DIR}/tempestextremes/stitch/stitch_nodes.py" \
+    uv run "${SCRIPT_DIR}/tempestextremes/stitch/stitch_nodes.py" \
         --input-dir "${SCRIPT_DIR}/intermediates/detectnodes" \
         --output-dir "${SCRIPT_DIR}/intermediates/stitchnodes" \
         --data-dir "${SCRIPT_DIR}/intermediates/tempestextreme_files"
@@ -111,14 +96,14 @@ stitch_nodes() {
 
 # Function to convert tracks
 convert_tracks() {
-    python "${SCRIPT_DIR}/tempestextremes/convert/convert_nodes.py" \
+    uv run "${SCRIPT_DIR}/tempestextremes/convert/convert_nodes.py" \
         --in_file "${SCRIPT_DIR}/intermediates/stitchnodes/tracks_mslp.csv" \
         --out_file "${SCRIPT_DIR}/intermediates/te_out/tracks_mslp.parquet"
 }
 
 # Function to refine centers
 refine_centers() {
-    python "${SCRIPT_DIR}/tempestextremes/subgrid/subgrid_precision.py" \
+    uv run "${SCRIPT_DIR}/tempestextremes/subgrid/subgrid_precision.py" \
         --input-file "${SCRIPT_DIR}/intermediates/te_out/tracks_mslp.parquet" \
         --input-dir "${SCRIPT_DIR}/intermediates/era5_mslp/*.nc" \
         --output "${SCRIPT_DIR}/intermediates/te_out/tracks_mslp_refined.parquet" \
@@ -139,8 +124,7 @@ run_tempestextremes() {
 # Function to fetch sentinel metadata
 fetch_sentinel() {
     echo "  Fetching Sentinel-1 metadata..."
-    run_container \
-        python "${SCRIPT_DIR}/sentinel1/download/download_metadata.py" \
+    uv run "${SCRIPT_DIR}/sentinel1/download/download_metadata.py" \
         --start-date "2014-01-01" \
         --end-date "2025-05-03" \
         --workers 16 \
@@ -158,8 +142,7 @@ run_sentinel() {
 # Function to download SWOT data
 download_swot() {
     echo "  Downloading SWOT data..."
-    run_container \
-        python "${SCRIPT_DIR}/swot/download/download_netcdf.py" \
+    uv run "${SCRIPT_DIR}/swot/download/download_netcdf.py" \
         --start-date "2014-01-01" \
         --end-date "2025-05-03" \
         --bbox -180 -80 180 -60 \
@@ -169,8 +152,7 @@ download_swot() {
 # Function to convert SWOT
 convert_swot() {
     echo "  Converting SWOT to parquet index..."
-    run_container \
-        python "${SCRIPT_DIR}/swot/extract/extract_netcdf_to_parquet.py" \
+    uv run "${SCRIPT_DIR}/swot/extract/extract_netcdf_to_parquet.py" \
         --input-dir "${SCRIPT_DIR}/intermediates/swot" \
         --output "${SCRIPT_DIR}/intermediates/shapes/swot/swot.parquet" \
         --step 20 \
@@ -188,22 +170,19 @@ run_swot() {
 # Function to load data into duckdb
 load_data() {
     echo "  Loading SWOT data..."
-    run_container \
-        python "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
+    uv run "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
         --input-parquet "${SCRIPT_DIR}/intermediates/shapes/swot/swot.parquet" \
         --table-name swot \
         --output-db "${DB_FILE}"
 
     echo "  Loading Sentinel-1 data..."
-    run_container \
-        python "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
+    uv run "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
         --input-parquet "${SCRIPT_DIR}/intermediates/shapes/sentinel/sentinel_*.parquet" \
         --table-name sentinel \
         --output-db "${DB_FILE}"
 
     echo "  Loading cyclone tracks..."
-    run_container \
-        python "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
+    uv run "${SCRIPT_DIR}/pipeline/utils/load_parquet.py" \
         --input-parquet "${SCRIPT_DIR}/intermediates/te_out/tracks_mslp_refined.parquet" \
         --table-name cyclones \
         --output-db "${DB_FILE}"
@@ -211,7 +190,7 @@ load_data() {
 
 # Function to filter by product type
 filter_product_type() {
-    python "${SCRIPT_DIR}/pipeline/filter/product_type.py" \
+    uv run "${SCRIPT_DIR}/pipeline/filter/product_type.py" \
         --db "${DB_FILE}" \
         --table sentinel \
         --product-type "EW_GRD%"
@@ -219,7 +198,7 @@ filter_product_type() {
 
 # Function to find intersections
 find_intersections() {
-    python "${SCRIPT_DIR}/pipeline/find/intersections.py" \
+    uv run "${SCRIPT_DIR}/pipeline/find/intersections.py" \
         --db "${DB_FILE}" \
         --table sentinel \
         --points "${SCRIPT_DIR}/intermediates/te_out/tracks_mslp_refined.parquet"
@@ -227,7 +206,7 @@ find_intersections() {
 
 # Function to find overlaps
 find_overlaps() {
-    python "${SCRIPT_DIR}/pipeline/find/overlaps.py" \
+    uv run "${SCRIPT_DIR}/pipeline/find/overlaps.py" \
         --db "${DB_FILE}" \
         --matches-table sentinel_matches \
         --output-table sentinel_matches_overlaps
@@ -235,7 +214,7 @@ find_overlaps() {
 
 # Function to filter by overlap percentage
 filter_overlap() {
-    python "${SCRIPT_DIR}/pipeline/filter/overlap_percentage.py" \
+    uv run "${SCRIPT_DIR}/pipeline/filter/overlap_percentage.py" \
         --db "${DB_FILE}" \
         --in-table sentinel_matches_overlaps \
         --min-overlap 10 \
@@ -244,7 +223,7 @@ filter_overlap() {
 
 # Function to filter by era5
 filter_era5() {
-    python "${SCRIPT_DIR}/pipeline/filter/era5_criterion.py" \
+    uv run "${SCRIPT_DIR}/pipeline/filter/era5_criterion.py" \
         --db "${DB_FILE}" \
         --input-table sentinel_matches_overlaps__overlap_filtered \
         --key-dotenv "${SCRIPT_DIR}/copernicus_api_key.env" \
@@ -255,7 +234,7 @@ filter_era5() {
 
 # Function to export uuids
 export_uuids() {
-    python "${SCRIPT_DIR}/sentinel1/export/download_information.py" \
+    uv run "${SCRIPT_DIR}/sentinel1/export/download_information.py" \
         --db "${DB_FILE}" \
         --overlaps-table sentinel_matches_overlaps__overlap_filtered__era5_filtered \
         --output "${SCRIPT_DIR}/intermediates/sentinel_download_uuids.parquet"
