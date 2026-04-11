@@ -1,18 +1,21 @@
-mkdir intermediates
+mkdir --verbose intermediates
 cd intermediates
-mkdir cyclone_coordinates
-mkdir db
-mkdir detectnodes
-mkdir era5
-mkdir era5_mslp
-mkdir seaice_concentrations
-mkdir shapes
-mkdir shapes/sentinel1
-mkdir shapes/swot
-mkdir swot
-mkdir stitchnodes
-mkdir te_out
-mkdir tempestextreme_files
-mkdir tempestextreme_files/logs
-mkdir tiffs
-mkdir uuids
+mkdir --verbose cyclone_coordinates
+mkdir --verbose db
+mkdir --verbose detectnodes
+mkdir --verbose era5
+mkdir --verbose era5_mslp
+mkdir --verbose seaice_concentrations
+mkdir --verbose shapes
+mkdir --verbose shapes/sentinel1
+mkdir --verbose shapes/swot
+mkdir --verbose swot
+mkdir --verbose stitchnodes
+mkdir --verbose te_out
+mkdir --verbose tempestextreme_files
+mkdir --verbose tempestextreme_files/logs
+mkdir --verbose tiffs
+mkdir --verbose uuids
+mkdir --verbose dump
+mkdir --verbose dump/sentinel1
+mkdir --verbose dump/swot
