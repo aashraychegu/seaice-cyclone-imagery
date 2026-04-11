@@ -16,8 +16,8 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("--uuids", required=True, help="Path to uuids file with 'id' and 's3_path' columns")
 parser.add_argument("--output", required=True, help="Output directory where folders with ID names will be created")
-parser.add_argument("--token-dotenv", default="copernicus_tokens.env", help="Path to .env file")
-parser.add_argument("--login-dotenv",default="copernicus_login.env",)
+parser.add_argument("--token-dotenv", default="./copernicus_tokens.env", help="Path to .env file")
+parser.add_argument("--login-dotenv",default="./copernicus_login.env",)
 parser.add_argument("--search-workers", type=int, default=32, help="Number of parallel workers for searching (default: 32)")
 parser.add_argument("--download-workers", type=int, default=4, help="Number of parallel workers (default: 4)")
 
