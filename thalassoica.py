@@ -267,7 +267,6 @@ def export_uuids(ctx: Ctx) -> bool:
     return bool(ok)
 
 
-# 5 - DUMP (blank placeholders)
 def dump_sentinel(ctx: Ctx) -> bool:
     return run_cmd(
         f'uv run "{ctx.script_dir}/pipeline/export/dump_satellite.py" '
@@ -275,7 +274,7 @@ def dump_sentinel(ctx: Ctx) -> bool:
         f' --overlaps-table sentinel1__product_filtered_matches_overlaps__overlap_filtered__era5_filtered '
         f' --imagery-table sentinel1 '
         f' --cyclone-table input_points '
-        f' --output "{ctx.script_dir}/intermediates/dump/sentinel1/dump_sentinel1.py" '
+        f' --output "{ctx.script_dir}/intermediates/dump/sentinel1/dump_sentinel1.py" ', "Exporting All Sentinel Data", "dump_sentinel"
     )
 
 
@@ -286,7 +285,7 @@ def dump_swot(ctx: Ctx) -> bool:
         f' --overlaps-table swot_matches_overlaps__overlap_filtered__era5_filtered '
         f' --imagery-table swot '
         f' --cyclone-table input_points '
-        f' --output "{ctx.script_dir}/intermediates/dump/swot/dump_swot.py" '
+        f' --output "{ctx.script_dir}/intermediates/dump/swot/dump_swot.py" ', "Exporting All SWOT Data", "dump_SWOT"
     )
 
 def download_sentinel(ctx: Ctx) -> bool:
@@ -294,7 +293,7 @@ def download_sentinel(ctx: Ctx) -> bool:
     return run_cmd(
         f'uv run "{ctx.script_dir}/sentinel1/download/download_images.py" '
         f' --uuids "{ctx.script_dir}/intermediates/uuids/sentinel_download_uuids.parquet" '
-        f' --output "{ctx.script_dir}/intermediates/tiffs/" '
+        f' --output "{ctx.script_dir}/intermediates/tiffs/" ', "Downloading All Sentinel1 Data", "download_sentinel1"
     )
 
 def swot_to_images(ctx: Ctx) -> bool:
@@ -302,7 +301,10 @@ def swot_to_images(ctx: Ctx) -> bool:
     return True
 
 def setup_intermediates(ctx: Ctx) -> bool:
-    return run_cmd("sh setup_intermediates.sh")
+    return run_cmd("sh setup_intermediates.sh","Setting up Intermediates","setup_intermediates",)
+
+def rescale_sentinel(cts: Ctx) -> bool:
+    return run_cmd(f"uv run {ctx.script_dir}/sentinel1/convert/rescale_sentinel1.py", "Rescale Sentinel1 Data","rescale_sentinel1", )
 
 # Utility commands
 def skip_step(_: Ctx) -> bool:
@@ -337,7 +339,7 @@ class Step:
 
 def build_steps() -> Tuple[Dict[str, Step], Dict[str, List[str]]]:
     steps: List[Step] = [
-        Step("0", "Build Intermediates", "0", setup_intermediates)
+        Step("0", "Build Intermediates", "0", setup_intermediates),
         Step("1a", "Download ERA5 MSLP netcdf files", "1", download_era5_mslp),
         Step("1b", "Detect cyclone nodes", "1", detect_nodes),
         Step("1c", "Stitch nodes into tracks", "1", stitch_nodes),
@@ -356,7 +358,8 @@ def build_steps() -> Tuple[Dict[str, Step], Dict[str, List[str]]]:
         Step("5a", "Dump Sentinel outputs", "5", dump_sentinel),
         Step("5b", "Dump SWOT outputs", "5", dump_swot),
         Step("6a", "Download Sentinel1 outputs", "6", download_sentinel),
-        Step("6b", "Convert SWOT imagery","6",swot_to_images)
+        Step("6b", "Rescale Sentinel1 imagery", "6", rescale_sentinel),
+        Step("6c", "Convert SWOT imagery","6",swot_to_images)
     ]
 
     by_code: Dict[str, Step] = {s.code.lower(): s for s in steps}
@@ -395,13 +398,15 @@ def show_menu(by_code: Dict[str, Step], section_to_codes: Dict[str, List[str]]) 
     print("Select a step to run (or q to quit):")
     print()
 
+    print_section("BUILD INTERMEDIATES", "0", "0")
     print_section("TEMPEST EXTREMES", "1", "1")
     print_section("SENTINEL-1", "2", "2")
     print_section("SWOT", "3", "3")
     print_section("PIPELINE", "4", "4")
     print_section("DUMP OUTPUTS", "5", "5")
+    print_section("DOWNLOAD/CONVERT", "6", "6")
 
-    print(f"  {Colors.YELLOW}ALL{Colors.NC} - Run all steps (1 -> 2 -> 3 -> 4)")
+    print(f"  {Colors.YELLOW}ALL{Colors.NC} - Run all steps (0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6)")
     print(f"  {Colors.YELLOW}CUSTOM ({Colors.NC}c{Colors.YELLOW}){Colors.NC} [steps] - Run a custom sequence (e.g., c 1a 1b)")
     print(f"  {Colors.YELLOW}SECTION ({Colors.NC}1,2,3,4,5{Colors.YELLOW}){Colors.NC} - Run an entire section")
     print(f"  {Colors.YELLOW}SKIP{Colors.NC} - Skip a completed step")
@@ -424,7 +429,7 @@ def run_all(ctx: Ctx, by_code: Dict[str, Step], section_to_codes: Dict[str, List
     print("========================================")
     print()
 
-    for section in ["1", "2", "3", "4"]:
+    for section in ["0","1", "2", "3", "4", "5", "6"]:
         run_codes_in_order(ctx, by_code, section_to_codes.get(section, []))
 
     print()

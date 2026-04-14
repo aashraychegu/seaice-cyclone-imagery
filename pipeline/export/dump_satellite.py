@@ -35,6 +35,19 @@ LEFT JOIN {args.imagery_table} ia ON o.id_after = ia.id
 LEFT JOIN {args.cyclone_table} c ON o.point_id = c.point_id
 """
 
+# Debug: print what we found
+print(f"Overlaps columns: {len(overlaps_cols)}")
+print(f"Imagery columns: {len(imagery_cols)}")
+print(f"Cyclone columns: {len(cyclone_cols)}")
+
+# Check if any column list is empty
+if not overlaps_cols:
+    raise ValueError(f"No columns found in table: {args.overlaps_table}")
+if not imagery_cols:
+    raise ValueError(f"No columns found in table: {args.imagery_table}")
+if not cyclone_cols:
+    raise ValueError(f"No columns found in table: {args.cyclone_table}")
+
 con.execute(query)
 
 result = con.execute("SUMMARIZE final_result").fetchdf()
