@@ -636,6 +636,12 @@ wheels = [
 ]
 
 [[package]]
+name = "gdal"
+version = "3.12.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/65/cb/64ab7a1dd03e53870fd4c993d72baf6881a663953d2d2e8dd92098c12e94/gdal-3.12.3.tar.gz", hash = "sha256:a5aebb8f50b8f4d5b0c238cc9a6c988be3041bc276535daeddc399fa6ec13972", size = 899374, upload-time = "2026-03-20T13:48:41.273Z" }
+
+[[package]]
 name = "google-api-core"
 version = "2.30.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1236,6 +1242,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "earthdata" },
     { name = "gcsfs" },
+    { name = "gdal" },
     { name = "h5netcdf" },
     { name = "h5py" },
     { name = "inquirer" },
@@ -1270,6 +1277,7 @@ requires-dist = [
     { name = "duckdb", specifier = "==1.4.4" },
     { name = "earthdata", specifier = ">=0.4.2" },
     { name = "gcsfs", specifier = ">=2026.3.0" },
+    { name = "gdal", specifier = ">=3.12.3" },
     { name = "h5netcdf", specifier = ">=1.8.1" },
     { name = "h5py", specifier = "==3.14.0" },
     { name = "inquirer", specifier = ">=3.4.1" },
