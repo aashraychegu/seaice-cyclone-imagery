@@ -39,7 +39,7 @@ def get_current_token():
 def refresh_token_safe():
     """Thread-safe token refresh - only one thread refreshes at a time"""
     with token_lock:
-        copernicus_access_token.refresh_access_token(args.token_dotenv)
+        copernicus_access_token.authenticate(os.getenv("USERNAME"),os.getenv("PASSWORD"), args.token_dotenv)
         load_dotenv(args.token_dotenv, override=True)
         return os.getenv("ACCESS_TOKEN")
 
